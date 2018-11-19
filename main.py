@@ -11,6 +11,14 @@ from PIL import Image
 from copy import deepcopy
 import glob
 from matplotlib import pyplot as plt
+from enum import Enum
+
+class Colors(Enum):
+    RED = "RED"
+    GREEN = "GREEN"
+    BLUE = "BLUE"
+    DARK_BLUE = "DARK_BLUE"
+
 
 class MainReacher():
     def __init__(self):
@@ -20,16 +28,6 @@ class MainReacher():
     def coordinate_convert(self,pixels):
         #Converts pixels into metres
         return np.array([(pixels[0]-self.env.viewerSize/2)/self.env.resolution,-(pixels[1]-self.env.viewerSize/2)/self.env.resolution])
-
-    # def detect_dark_red(self, image):
-    #     mask = cv2.inRange(image, (0,0,240), (5,5,255))
-    #     kernel = np.ones((5,5), np.uint8)
-    #     mask = cv2.dilate(mask, kernel, iterations=3)
-    #     M = cv2.moments(mask)
-    #     cx = int(M['m10'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
-    #     cy = int(M['m01'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
-
-        return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
 
     def peak_pick(self, image):
         img_hist=cv2.calcHist([image],[0],None,[256],[0,256])
@@ -47,46 +45,100 @@ class MainReacher():
 
         return thresh
 
-    def detect_blue(self, image, thresholds):
-        mask = cv2.inRange(image, (0,0,thresholds[2]),(thresholds[0]-1,thresholds[1]-1,255))
-        kernel = np.ones((5,5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
-        cy = int(M['m01'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
+    def detect_color(self, image_xy, image_xz, thresholds, color):
+        if color == Colors.RED.value:
+            # red
+            mask_xy = cv2.inRange(image_xy, (thresholds[0],0,0),(255,thresholds[1]-1,thresholds[2]-1))
+            mask_xz = cv2.inRange(image_xz, (thresholds[0],0,0),(255,thresholds[1]-1,thresholds[2]-1))
+        elif color == Colors.GREEN.value:
+            # green
+            mask_xy = cv2.inRange(image_xy, (0, thresholds[1], 0),(thresholds[0]-1, 255, thresholds[2]-1))
+            mask_xz = cv2.inRange(image_xz, (0, thresholds[1], 0),(thresholds[0]-1, 255, thresholds[2]-1))
 
-        return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
+        elif color == Colors.BLUE.value:
+            # blue
+            mask_xy = cv2.inRange(image_xy, (0,0,thresholds[2]+220),(thresholds[0]-1,thresholds[1]-1, 255))
+            mask_xz = cv2.inRange(image_xz, (0,0,thresholds[2]+220),(thresholds[0]-1,thresholds[1]-1, 255))
+
+        elif color == Colors.DARK_BLUE.value:
+            # dark blue
+            mask_xy = cv2.inRange(image_xy, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 220))
+            mask_xz = cv2.inRange(image_xz, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 220))
+
+
+        kernel_xy = np.ones((5,5),np.uint8)
+        mask_xy = cv2.dilate(mask_xy, kernel_xy, iterations=2)
+        mask_xy = cv2.erode(mask_xy, kernel_xy, iterations=3)
+        M_xy = cv2.moments(mask_xy)
+
+        if M_xy['m00'] != 0:
+            cx_xy = int(M_xy['m10']/M_xy['m00'])
+            cy_xy = int(M_xy['m01']/M_xy['m00'])
+        else:
+            cx_xy, cy_xy = 0,0
+
+        return cx_xy, cy_xy
+        kernel_xz = np.ones((5,5),np.uint8)
+        mask_xz = cv2.dilate(mask_xz, kernel_xz, iterations=2)
+        mask_xz = cv2.erode(mask_xz, kernel_xz, iterations=3)
+        M_xz = cv2.moments(mask_xz)
+
+        if M_xz['m00'] != 0:
+            cx_xz = int(M_xz['m10']/M_xz['m00'])
+            cz_xz = int(M_xz['m01']/M_xz['m00'])
+        else:
+            cx_xz, cz_xz = 0,0
+
+        y_coord = self.coordinate_convert(np.array([cx_xy,cy_xy]))
+        z_coord = self.coordinate_convert(np.array([cx_xz,cz_xz]))
+
+        x, y, z = y_coord[0], y_coord[1], z_coord[1]
+
+        return np.array([np.asscalar(x),np.asscalar(y),np.asscalar(z)])
 
     def detect_dark_blue(self, image, thresholds):
-        mask = cv2.inRange(image, (0,0,120), (0,0,130))
-        kernel = np.ones((5,5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
+        mask = cv2.inRange(image, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 220))
+        kernel = np.ones((5,5),np.uint8)
+        mask = cv2.dilate(mask,kernel, iterations=2)
+        mask = cv2.erode(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
-        cy = int(M['m01'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
 
-        return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
+        if M['m00'] != 0:
+            cx = int(M['m10']/M['m00'])
+            cy = int(M['m01']/M['m00'])
+        else:
+            cx,cy = 0,0
+
+        # return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
 
     def detect_red(self, image, thresholds):
         mask = cv2.inRange(image, (thresholds[0],0,0),(255,thresholds[1]-1,thresholds[2]-1))
         kernel = np.ones((5,5),np.uint8)
-        mask = cv2.dilate(mask,kernel,iterations=2)
-        mask=cv2.erode(mask,kernel,iterations=3)
+        mask = cv2.dilate(mask,kernel, iterations=2)
+        mask = cv2.erode(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
-        cy = int(M['m01'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
 
-        return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
+        if M['m00'] != 0:
+            cx = int(M['m10']/M['m00'])
+            cy = int(M['m01']/M['m00'])
+        else:
+            cx,cy = 0,0
+        # return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
 
     def detect_green(self, image, thresholds):
         mask = cv2.inRange(image, (0, thresholds[1], 0),(thresholds[0]-1, 255, thresholds[2]-1))
-        kernel = np.ones((5,5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
+        kernel = np.ones((5,5),np.uint8)
+        mask = cv2.dilate(mask,kernel, iterations=2)
+        mask = cv2.erode(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
-        cy = int(M['m01'] / (M['m00'] if M['m00'] != 0 else 0.000000001))
 
-        return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
+        if M['m00'] != 0:
+            cx = int(M['m10']/M['m00'])
+            cy = int(M['m01']/M['m00'])
+        else:
+            cx,cy = 0,0
+
+        # return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
 
 
     def angle_normalize(self, x):
@@ -133,31 +185,31 @@ class MainReacher():
 
         if debug:
             print(("XY:" if XY else "XZ:")+ str(np.array([ja1, ja2, ja3, ja4])))
-        # return np.array([ja1, ja2, ja3, ja4])
+        return np.array([ja1, ja2, ja3, ja4])
 
     # def remove_illumination(self, img):
-    #     sum_img = np.sum(img, axis=2)*0.65
+    #     sum_img = np.sum(img, axis=2)*0.99
     #     sum_img[sum_img==0] = 1e-5
     #     average_img = img / sum_img[:, :, np.newaxis]
     #     return average_img
 
-    def show_joints_with_details(self, image, thresholds):
-        new_img = deepcopy(image)
+    def show_joints_with_details(self, image_xy, image_xz, thresholds):
+        new_img = deepcopy(image_xy)
         # new_img = self.remove_illumination(new_img)
 
-        cx, cy = self.detect_dark_blue(new_img, thresholds)
-        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0),2)
-        cx, cy = self.detect_blue(new_img, thresholds)
-        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0),2)
-        cx, cy = self.detect_green(new_img, thresholds)
-        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0),2)
-        cx, cy = self.detect_red(new_img, thresholds)
-        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0),2)
+        cx, cy = self.detect_color(image_xy, image_xz, thresholds, Colors.RED.value)
+        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0), 2)
+        cx, cy = self.detect_color(image_xy, image_xz, thresholds, Colors.GREEN.value)
+        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0), 2)
+        cx, cy = self.detect_color(image_xy, image_xz, thresholds, Colors.BLUE.value)
+        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0), 2)
+        cx, cy = self.detect_color(image_xy, image_xz, thresholds, Colors.DARK_BLUE.value)
+        cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0), 2)
 
-        img = Image.fromarray(new_img)
-        img.show()
+        cv2.imshow("img", new_img)
+        cv2.waitKey(0)
 
-    def detect_target(self,image_xy,image_xz):
+    def detect_target(self, image_xy, image_xz):
         template_data_xy= []
         template_data_xz = []
         #make a list of all template images from a directory
@@ -217,6 +269,27 @@ class MainReacher():
 
         return np.array([(best_top_left_xy, best_bottom_right_xy), (best_top_left_xz, best_bottom_right_xz)])
 
+    def Jacobian_analytic(self,joint_angles):
+        #Forward Kinematics using the analytic equation
+        #Each link is 1m long
+        #Use trigonometry from FK_analytic and differentiate it with respect to time.
+        jacobian = np.zeros((3,3))
+        jacobian[0,0] = -np.sin(joint_angles[0])*1-np.sin(joint_angles[0]+joint_angles[1])*1-np.sin(joint_angles[0]+joint_angles[1]+joint_angles[2])*1
+
+        jacobian[0,1] = -np.sin(joint_angles[0]+joint_angles[1])*1-np.sin(joint_angles[0]+joint_angles[1]+joint_angles[2])*1
+
+        jacobian[0,2] = -np.sin(joint_angles[0]+joint_angles[1]+joint_angles[2])*1
+
+        jacobian[1,0] = np.cos(joint_angles[0])*1 + np.cos(joint_angles[0]+joint_angles[1])*1 + np.cos(joint_angles[0]+joint_angles[1]+joint_angles[2])*1
+
+        jacobian[1,1] = np.cos(joint_angles[0]+joint_angles[1])*1 + np.cos(joint_angles[0]+joint_angles[1]+joint_angles[2])*1
+
+        jacobian[1,2] = np.cos(joint_angles[0]+joint_angles[1]+joint_angles[2])*1
+
+        jacobian[2,0] = 1
+        jacobian[2,1] = 1
+        jacobian[2,2] = 1
+        return jacobian
 
     def go(self):
         #The robot has several simulated modes:
@@ -234,10 +307,9 @@ class MainReacher():
 
         #self.env.render returns 2 RGB arrays of the robot, one for the xy-plane, and one for the xz-plane
         image_foreground_xy, image_foreground_xz = self.env.render('rgb-array')
-        self.detect_target(image_foreground_xy, image_foreground_xz)
 
         #Calculate the initial thresholds
-        thresholds = np.zeros([4])
+        thresholds = np.zeros([3])
 
         #First isolate the objects in the foreground by removing the background white pixels
         thresh_red = self.peak_pick(image_foreground_xy[:,:,0])
@@ -254,20 +326,21 @@ class MainReacher():
         thresholds[1] = self.peak_pick(image_foreground_xy[:,:,1])
         thresholds[2] = self.peak_pick(image_foreground_xy[:,:,2])
 
-        last_img = None
+
         # for i in range(100):
         #     #The change in time between iterations can be found in the self.env.dt variable
         #     dt = self.env.dt
         #
+        #     print "Real JA" + str(self.env.ground_truth_joint_angles)
+        #
         #     arrxy, arrxz = self.env.render('rgb-array')
         #     detected_joint_angles = self.detect_joint_angles(arrxy, thresholds)
-        #
-        #     # self.env.step((np.zeros(4), np.zeros(4), jointAngles, np.zeros(4)))
+        #     self.env.step((np.zeros(4), np.zeros(4), detected_joint_angles, np.zeros(4)))
         #     last_img = arrxy
         #     if i ==5 :
         #         break
-        #
-        # self.show_joints_with_details(last_img, thresholds)
+
+        self.show_joints_with_details(*self.env.render('rgb-array'), thresholds= thresholds)
 #main method
 def main():
     reach = MainReacher()
