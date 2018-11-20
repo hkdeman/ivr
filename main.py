@@ -12,6 +12,8 @@ from copy import deepcopy
 import glob
 from matplotlib import pyplot as plt
 from enum import Enum
+from sklearn.metrics import accuracy_score
+import numpy.linalg as npl
 
 class Colors(Enum):
     RED = "RED"
@@ -57,14 +59,15 @@ class MainReacher():
 
         elif color == Colors.BLUE.value:
             # blue
-            mask_xy = cv2.inRange(image_xy, (0,0,thresholds[2]+220),(thresholds[0]-1,thresholds[1]-1, 255))
-            mask_xz = cv2.inRange(image_xz, (0,0,thresholds[2]+220),(thresholds[0]-1,thresholds[1]-1, 255))
+            mask_xy = cv2.inRange(image_xy, (0,0,thresholds[2]+180),(thresholds[0]-1,thresholds[1]-1, 255))
+            mask_xz = cv2.inRange(image_xz, (0,0,thresholds[2]+180),(thresholds[0]-1,thresholds[1]-1, 255))
 
         elif color == Colors.DARK_BLUE.value:
             # dark blue
-            mask_xy = cv2.inRange(image_xy, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 220))
-            mask_xz = cv2.inRange(image_xz, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 220))
-
+            mask_xy = cv2.inRange(image_xy, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 180))
+            mask_xz = cv2.inRange(image_xz, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 180))
+        else:
+            raise("Color not found")
 
         kernel_xy = np.ones((5,5),np.uint8)
         mask_xy = cv2.dilate(mask_xy, kernel_xy, iterations=2)
@@ -96,102 +99,151 @@ class MainReacher():
 
         return np.array([np.asscalar(x),np.asscalar(y),np.asscalar(z)])
 
-    def detect_dark_blue(self, image, thresholds):
-        mask = cv2.inRange(image, (0,0,thresholds[2]), (thresholds[0]-1, thresholds[1]-1, 220))
-        kernel = np.ones((5,5),np.uint8)
-        mask = cv2.dilate(mask,kernel, iterations=2)
-        mask = cv2.erode(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-
-        if M['m00'] != 0:
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
-        else:
-            cx,cy = 0,0
-
-        # return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
-
-    def detect_red(self, image, thresholds):
-        mask = cv2.inRange(image, (thresholds[0],0,0),(255,thresholds[1]-1,thresholds[2]-1))
-        kernel = np.ones((5,5),np.uint8)
-        mask = cv2.dilate(mask,kernel, iterations=2)
-        mask = cv2.erode(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-
-        if M['m00'] != 0:
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
-        else:
-            cx,cy = 0,0
-        # return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
-
-    def detect_green(self, image, thresholds):
-        mask = cv2.inRange(image, (0, thresholds[1], 0),(thresholds[0]-1, 255, thresholds[2]-1))
-        kernel = np.ones((5,5),np.uint8)
-        mask = cv2.dilate(mask,kernel, iterations=2)
-        mask = cv2.erode(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-
-        if M['m00'] != 0:
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
-        else:
-            cx,cy = 0,0
-
-        # return np.array([cx, cy]) #, self.coordinate_convert(np.array([cx,cy]))
-
-
     def angle_normalize(self, x):
         return (((x+np.pi) % (2*np.pi)) - np.pi)
 
-    # def detect_goal(self, imagexy, imagexz):
-    #     xy_valid_images = []
-    #     for filename in glob.glob("./valid/imagexy*.jpg"):
-    #         img = cv2.imread(filename)
-    #         valid_images.append(img)
+    # def detect_joint_angles(self,imageXY, imageXZ, thresholds):
+    #     jointPos1 = self.detect_color(imageXY, imageXZ, thresholds, Colors.RED.value)
+    #     jointPos2 = self.detect_color(imageXY, imageXZ, thresholds, Colors.GREEN.value)
+    #     jointPos3 = self.detect_color(imageXY, imageXZ, thresholds, Colors.BLUE.value)
+    #     jointPos4 = self.detect_color(imageXY, imageXZ, thresholds, Colors.DARK_BLUE.value)
     #
-    #     xz_valid_images = []
-    #     for filename in glob.glob("./valid/imagexz*.jpg"):
-    #         img = cv2.imread(filename)
-    #         valid_images.append(img)
+    #     #get angle one
+    #     ja1 = np.arccos(jointPos1[0]/npl.norm(jointPos1))
     #
-    #     goal_coords = None
-    #     trap_coords = None
-    #     method = cv2.cv2.TM_CCOEFF_NORMED
-    #     for template in valid_images:
-    #         w, h = template.shape[::-1]
-    #         new_img = image.copy()
-    #         res = cv2.matchTemplate(new_img, template, method)
-    #         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-    #         top_left = max_loc
-    #         bottom_right = (top_left[0] + w, top_left[1] + h)
-    #         cv2.rectangle(new_img,top_left, bottom_right, 255, 2)
-    #         img = Image.fromarray(new_img, 'RGB')
-    #         img.show()
+    #     if(jointPos1[0]<0 and jointPos1[1]>0):
+    #         ja1 = np.pi - ja1
+    #     elif(jointPos1[0]<0 and jointPos1[1]<0):
+    #         ja1 = -np.pi + ja1
+    #     elif(jointPos1[0]>0 and jointPos1[1]>0):
+    #         ja1 = ja1
+    #     elif(jointPos1[0]>0 and jointPos1[1]<0):
+    #         ja1 = - ja1
+    #
+    #     #create rotation matrix
+    #     rotationMatrixY = np.array([[np.cos(ja1),0,np.sin(ja1)],
+    #                                 [0         ,1,          0],
+    #                                 [-np.sin(ja1),0,np.cos(ja1)]])
+    #     ja1 = np.arccos(jointPos1[0]/npl.norm(jointPos1))
+    #
+    #     #create vector
+    #     j2Vec = np.transpose(jointPos2 - jointPos1)
+    #
+    #     #apply rotation matrix and translation
+    #     j2Vec = np.dot(rotationMatrixY,j2Vec)
+    #     j2Vec[1] = j2Vec[1] - np.dot(rotationMatrixY,np.transpose(jointPos1))[1]
+    #
+    #     #get angle 2
+    #     ja2 = np.arccos(j2Vec[0]/npl.norm(j2Vec))
+    #
+    #     #repeat for angle 3
+    #     rotationMatrixY2 = np.array([[np.cos(ja2),0,np.sin(ja2)],
+    #                                 [0         ,1,          0],
+    #                                 [-np.sin(ja2),0,np.cos(ja2)]])
+    #
+    #     rotationMatrixZ = np.array([[np.cos(ja2),-np.sin(ja2),0],
+    #                                 [np.sin(ja2),np.cos(ja2), 0],
+    #                                 [0          ,0,           1]])
+    #
+    #
+    #     j3Vec = np.transpose(jointPos3-jointPos2)
+    #
+    #     j3Vec = np.dot(rotationMatrixY,j3Vec)
+    #     j3Vec[1] = j3Vec[1] - np.dot(rotationMatrixY,np.transpose(jointPos1))[1]
+    #
+    #
+    #     j3Vec = np.dot(rotationMatrixZ,j3Vec)
+    #     j3Vec[1] = j3Vec[1] - np.dot(rotationMatrixZ,np.transpose(jointPos2-jointPos1))[1]
+    #
+    #     ja3 = np.arccos(j3Vec[0]/npl.norm(j3Vec))
+    #
+    #     #repeat for angle 4
+    #     rotationMatrixY2 = np.array([[np.cos(ja3),0,np.sin(ja3)],
+    #                                 [0         ,1,          0],
+    #                                 [-np.sin(ja3),0,np.cos(ja3)]])
+    #
+    #     rotationMatrixZ2 = np.array([[np.cos(ja3),-np.sin(ja3),0],
+    #                                 [np.sin(ja3),np.cos(ja3), 0],
+    #                                 [0          ,0,           1]])
+    #
+    #
+    #     j4Vec = np.transpose(jointPos4-jointPos3)
+    #
+    #     j3Vec = np.dot(rotationMatrixY,j4Vec)
+    #     j4Vec[1] = j4Vec[1] - np.dot(rotationMatrixY,np.transpose(jointPos1))[1]
+    #
+    #
+    #     j4Vec = np.dot(rotationMatrixZ,j4Vec)
+    #     j4Vec[1] = j4Vec[1] - np.dot(rotationMatrixZ,np.transpose(jointPos2-jointPos1))[1]
+    #
+    #     j4Vec = np.dot(rotationMatrixZ2,j4Vec)
+    #     j4Vec[1] = j4Vec[1] - np.dot(rotationMatrixZ,np.transpose(jointPos3-jointPos2))[1]
+    #
+    #     ja4 = np.arccos(j3Vec[0]/npl.norm(j3Vec))
+    #
+    #     #normalise joint angle 2
+    #     if(j2Vec[0]<0 and j2Vec[1]>0):
+    #         #UL
+    #         #print "UL"
+    #         ja2 = ja2
+    #     elif(j2Vec[0]<0 and j2Vec[1]<0):
+    #         #LL
+    #         #print "LL"
+    #         ja2 = -ja2
+    #     elif(j2Vec[0]>0 and j2Vec[1]>0):
+    #         #UR
+    #         ja2 = ja2
+    #     elif(j2Vec[0]>0 and j2Vec[1]<0):
+    #         #LR
+    #         ja2 = -ja2
+    #
+    #     #normalise joint angle 3
+    #     if(j3Vec[0]<0 and j2Vec[1]>0):
+    #         #UL
+    #         ja3 = ja3
+    #     elif(j3Vec[0]<0 and j3Vec[1]<0):
+    #         #LL
+    #         ja3 = ja3
+    #     elif(j3Vec[0]>0 and j3Vec[1]>0):
+    #         #UR
+    #         ja3 = ja3
+    #     elif(j3Vec[0]>0 and j3Vec[1]<0):
+    #         #LR
+    #         ja3 = ja3
+    #
+    #     #normalise joint angle 4
+    #     if(j4Vec[0]<0 and j4Vec[1]>0):
+    #         #UL
+    #         ja4 = ja4
+    #     elif(j4Vec[0]<0 and j4Vec[1]<0):
+    #         #LL
+    #         ja4 = -ja4
+    #     elif(j4Vec[0]>0 and j4Vec[1]>0):
+    #         #UR
+    #         ja4 = -ja4
+    #     elif(j4Vec[0]>0 and j4Vec[1]<0):
+    #         #LR
+    #         ja4 = -ja4
+    #
+    #     print(np.array([ja1,ja2,ja3,ja4]))
+    #     print(self.env.ground_truth_joint_angles)
+    #     jA=np.array([ja1,ja2,ja3,ja4])
+    #     truejA=self.env.ground_truth_joint_angles
+    #     # print(accuracy_score(jA,truejA))
+    #     return np.array([ja1,ja2,ja3,ja4])
 
-    def detect_joint_angles(self, image, thresholds, XY=True, debug=False):
-        joint1 = self.detect_red(image, thresholds)
-        joint2 = self.detect_green(image, thresholds)
-        joint3 = self.detect_blue(image, thresholds)
-        joint4 = self.detect_dark_blue(image, thresholds)
+    def detect_joint_angles(self, image_xy, image_xz, thresholds):
+        joint1 = self.detect_color(image_xy, image_xz, thresholds, Colors.RED.value)
+        joint2 = self.detect_color(image_xy, image_xz, thresholds, Colors.GREEN.value)
+        joint3 = self.detect_color(image_xy, image_xz, thresholds, Colors.BLUE.value)
+        joint4 = self.detect_color(image_xy, image_xz, thresholds, Colors.DARK_BLUE.value)
+
+        # joint1 only rotates over y axes
 
         ja1 = math.atan2(joint1[1], joint1[0])
-        ja2 = math.atan2(joint2[1] - joint1[1], joint2[0] - joint1[0]) - ja1
-        ja2 = self.angle_normalize(ja2)
-        ja3 = math.atan2(joint3[1] - joint2[1], joint3[0] - joint2[0]) - ja1 - ja2
-        ja3 = self.angle_normalize(ja3)
-        ja4 = math.atan2(joint4[1] - joint3[1], joint4[0] - joint3[0]) - ja1 - ja2 - ja3
-        ja4 = self.angle_normalize(ja4)
+        print(ja1)
 
-        if debug:
-            print(("XY:" if XY else "XZ:")+ str(np.array([ja1, ja2, ja3, ja4])))
-        return np.array([ja1, ja2, ja3, ja4])
 
-    # def remove_illumination(self, img):
-    #     sum_img = np.sum(img, axis=2)*0.99
-    #     sum_img[sum_img==0] = 1e-5
-    #     average_img = img / sum_img[:, :, np.newaxis]
-    #     return average_img
 
     def show_joints_with_details(self, image_xy, image_xz, thresholds):
         new_img = deepcopy(image_xy)
@@ -207,7 +259,6 @@ class MainReacher():
         cv2.rectangle(new_img, (cx-30, cy-30), (cx+30, cy+30), (0,0,0), 2)
 
         cv2.imshow("img", new_img)
-        cv2.waitKey(0)
 
     def detect_target(self, image_xy, image_xz):
         template_data_xy= []
@@ -269,7 +320,7 @@ class MainReacher():
 
         return np.array([(best_top_left_xy, best_bottom_right_xy), (best_top_left_xz, best_bottom_right_xz)])
 
-    def Jacobian_analytic(self,joint_angles):
+    def Jacobian_analytic(self, joint_angles):
         #Forward Kinematics using the analytic equation
         #Each link is 1m long
         #Use trigonometry from FK_analytic and differentiate it with respect to time.
@@ -326,21 +377,41 @@ class MainReacher():
         thresholds[1] = self.peak_pick(image_foreground_xy[:,:,1])
         thresholds[2] = self.peak_pick(image_foreground_xy[:,:,2])
 
+        for i in range(100000):
+            #The change in time between iterations can be found in the self.env.dt variable
+            dt = self.env.dt
 
-        # for i in range(100):
-        #     #The change in time between iterations can be found in the self.env.dt variable
-        #     dt = self.env.dt
-        #
-        #     print "Real JA" + str(self.env.ground_truth_joint_angles)
-        #
-        #     arrxy, arrxz = self.env.render('rgb-array')
-        #     detected_joint_angles = self.detect_joint_angles(arrxy, thresholds)
-        #     self.env.step((np.zeros(4), np.zeros(4), detected_joint_angles, np.zeros(4)))
-        #     last_img = arrxy
-        #     if i ==5 :
-        #         break
+            # print "Real JA" + str(self.env.ground_truth_joint_angles)
+            # detected_joint_angles = self.detect_joint_angles(*self.env.render('rgb-array'),thresholds = thresholds)
 
-        self.show_joints_with_details(*self.env.render('rgb-array'), thresholds= thresholds)
+            # detected_joint_angles = self.detect_joint_angles(arrxy, thresholds)
+            self.env.step((np.zeros(4), np.zeros(4), np.array([-0.5,-0.5,-0.5,-0.5]), np.zeros(4)))
+            # print(detected_joint_angles)
+            # print(self.env.ground_truth_joint_angles)
+
+            image_foreground_xy, image_foreground_xz = self.env.render('rgb-array')
+
+            self.show_joints_with_details(image_foreground_xy, image_foreground_xz, thresholds=thresholds)
+
+            #Calculate the initial thresholds
+            thresholds = np.zeros([3])
+
+            #First isolate the objects in the foreground by removing the background white pixels
+            thresh_red = self.peak_pick(image_foreground_xy[:,:,0])
+            thresh_green = self.peak_pick(image_foreground_xy[:,:,1])
+            thresh_blue = self.peak_pick(image_foreground_xy[:,:,2])
+
+            mask_white = cv2.inRange(image_foreground_xy, (thresh_red, thresh_green, thresh_blue), (255, 255, 255))+1
+            image_foreground_xy[:,:,0] *= mask_white
+            image_foreground_xy[:,:,1] *= mask_white
+            image_foreground_xy[:,:,2] *= mask_white
+
+            #Now calculate the thresholds for the objects in the foreground
+            thresholds[0] = self.peak_pick(image_foreground_xy[:,:,0])
+            thresholds[1] = self.peak_pick(image_foreground_xy[:,:,1])
+            thresholds[2] = self.peak_pick(image_foreground_xy[:,:,2])
+
+        # self.show_joints_with_details(*self.env.render('rgb-array'), thresholds= thresholds)
 #main method
 def main():
     reach = MainReacher()
